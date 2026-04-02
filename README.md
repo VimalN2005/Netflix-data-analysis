@@ -1,2 +1,2 @@
 # Netflix-data-analysis
-analysis project
+This project analyzes Netflix data to discover key insights about content trends, genres, and global distribution using Python and visualization tools.
