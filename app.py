@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
@@ -9,62 +9,110 @@ st.set_page_config(
 )
 
 st.title("🎬 Netflix Movie Analytics Dashboard")
-st.write("Interactive analysis of Netflix movie data")
+st.write("Interactive analysis of movie data")
 
-# Upload dataset
 uploaded_file = st.file_uploader(
-    "Upload Netflix CSV file",
+    "Upload Movie Dataset (CSV)",
     type=["csv"]
 )
 
 if uploaded_file is None:
-    st.info("Please upload the Netflix CSV dataset to start.")
+    st.info("Please upload your CSV dataset to start.")
     st.stop()
 
-df = pd.read_csv(uploaded_file)
+# Read CSV safely
+try:
+    df = pd.read_csv(uploaded_file)
+except UnicodeDecodeError:
+    uploaded_file.seek(0)
+    df = pd.read_csv(uploaded_file, encoding="latin1")
+except pd.errors.ParserError:
+    uploaded_file.seek(0)
+    df = pd.read_csv(
+        uploaded_file,
+        encoding="latin1",
+        on_bad_lines="skip"
+    )
 
-# Basic cleaning
-df = df.dropna(subset=["Title"])
+st.success("Dataset loaded successfully!")
 
-if "Genre" in df.columns:
-    df["Genre"] = df["Genre"].fillna("Unknown")
-
-# Sidebar filters
+# Show columns
 st.sidebar.header("🔎 Filters")
 
+# Convert Release_Date to numeric if present
 if "Release_Date" in df.columns:
-    years = sorted(df["Release_Date"].dropna().unique())
-    selected_years = st.sidebar.multiselect(
-        "Release Year",
-        years,
-        default=years
+    df["Release_Date"] = pd.to_numeric(
+        df["Release_Date"],
+        errors="coerce"
     )
-    df = df[df["Release_Date"].isin(selected_years)]
 
+    years = sorted(
+        df["Release_Date"]
+        .dropna()
+        .unique()
+    )
+
+    if years:
+        selected_years = st.sidebar.multiselect(
+            "Release Year",
+            years,
+            default=years
+        )
+
+        df = df[
+            df["Release_Date"].isin(selected_years)
+        ]
+
+# Genre filter
 if "Genre" in df.columns:
-    genres = sorted(df["Genre"].dropna().unique())
+
+    df["Genre"] = df["Genre"].fillna("Unknown")
+
+    genres = sorted(
+        df["Genre"]
+        .astype(str)
+        .unique()
+    )
+
     selected_genres = st.sidebar.multiselect(
         "Genre",
         genres,
         default=genres
     )
-    df = df[df["Genre"].isin(selected_genres)]
+
+    df = df[
+        df["Genre"].astype(str).isin(selected_genres)
+    ]
 
 # KPIs
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("🎬 Total Titles", df["Title"].nunique())
+if "Title" in df.columns:
+    col1.metric("🎬 Total Titles", df["Title"].nunique())
+else:
+    col1.metric("📊 Total Rows", len(df))
 
 if "Popularity" in df.columns:
     col2.metric(
         "🔥 Highest Popularity",
-        round(df["Popularity"].max(), 2)
+        round(
+            pd.to_numeric(
+                df["Popularity"],
+                errors="coerce"
+            ).max(),
+            2
+        )
     )
 
 if "Vote_Count" in df.columns:
     col3.metric(
         "🗳️ Total Votes",
-        int(df["Vote_Count"].sum())
+        int(
+            pd.to_numeric(
+                df["Vote_Count"],
+                errors="coerce"
+            ).fillna(0).sum()
+        )
     )
 
 if "Genre" in df.columns:
@@ -75,10 +123,16 @@ if "Genre" in df.columns:
 
 st.divider()
 
-# Top movies
-st.subheader("🔥 Most Popular Movies")
+# Most popular movies
+if "Title" in df.columns and "Popularity" in df.columns:
 
-if "Popularity" in df.columns:
+    st.subheader("🔥 Top 10 Movies by Popularity")
+
+    df["Popularity"] = pd.to_numeric(
+        df["Popularity"],
+        errors="coerce"
+    )
+
     top_movies = (
         df.groupby("Title", as_index=False)["Popularity"]
         .max()
@@ -90,35 +144,36 @@ if "Popularity" in df.columns:
         top_movies,
         x="Popularity",
         y="Title",
-        orientation="h",
-        title="Top 10 Movies by Popularity"
+        orientation="h"
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-# Genre analysis
+# Genre distribution
 if "Genre" in df.columns:
+
     st.subheader("🎭 Genre Distribution")
 
     genre_count = (
         df["Genre"]
         .value_counts()
+        .head(15)
         .reset_index()
     )
 
     genre_count.columns = ["Genre", "Count"]
 
     fig = px.bar(
-        genre_count.head(15),
+        genre_count,
         x="Genre",
-        y="Count",
-        title="Most Frequent Genres"
+        y="Count"
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-# Release year
-if "Release_Date" in df.columns:
+# Movies by year
+if "Release_Date" in df.columns and "Title" in df.columns:
+
     st.subheader("📅 Movies by Release Year")
 
     yearly = (
@@ -133,50 +188,35 @@ if "Release_Date" in df.columns:
         yearly,
         x="Release_Date",
         y="Movies",
-        markers=True,
-        title="Movies Released by Year"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# Vote average
-if "Vote_Average" in df.columns:
-    st.subheader("⭐ Vote Distribution")
-
-    vote_count = (
-        df["Vote_Average"]
-        .value_counts()
-        .reset_index()
-    )
-
-    vote_count.columns = ["Vote_Average", "Count"]
-
-    fig = px.bar(
-        vote_count,
-        x="Vote_Average",
-        y="Count",
-        title="Vote Average Distribution"
+        markers=True
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
 # Search
-st.subheader("🔍 Search Movies")
+if "Title" in df.columns:
 
-search = st.text_input("Enter movie title")
+    st.subheader("🔍 Search Movie")
 
-if search:
-    result = df[
-        df["Title"]
-        .astype(str)
-        .str.contains(search, case=False, na=False)
-    ]
+    search = st.text_input("Enter movie title")
 
-    st.dataframe(
-        result,
-        use_container_width=True
-    )
+    if search:
 
-# Raw data
+        result = df[
+            df["Title"]
+            .astype(str)
+            .str.contains(
+                search,
+                case=False,
+                na=False
+            )
+        ]
+
+        st.dataframe(
+            result,
+            use_container_width=True
+        )
+
+# Dataset preview
 with st.expander("📊 View Dataset"):
     st.dataframe(df, use_container_width=True)
